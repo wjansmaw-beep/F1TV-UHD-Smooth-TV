@@ -15,6 +15,11 @@ on:
         required: false
         type: boolean
         default: false
+      smooth_tv:
+        description: "Build a smooth TV variant using decoder-to-SurfaceView rendering"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -76,6 +81,9 @@ jobs:
         if: steps.version.outputs.version_short != ''
         run: |
           TAG="v${{ steps.version.outputs.version_short }}"
+          if [[ "${{ inputs.smooth_tv }}" == "true" ]]; then
+            TAG="${TAG}-smooth-tv"
+          fi
           # Dev branch uses a separate tag
           if [[ "${{ github.ref_name }}" != "main" ]]; then
             TAG="${TAG}-${{ github.ref_name }}"
@@ -413,16 +421,14 @@ jobs:
           chmod +x scripts/patch.sh
           bash scripts/patch.sh "${{ steps.apkm.outputs.path }}" output/
         env:
-          # Unlock the 2160p tier and render it with correct colours. All default
-          # on/off in patch.sh; set explicitly here for clarity.
+          # Unlock the 2160p tier. The normal build keeps the EGL/GL path for
+          # colour correctness; smooth_tv switches to decoder-to-SurfaceView for
+          # TVs that show 2160p but advance frames very slowly.
           #   HLG_BYPASS + DISPLAY_HDR_SPOOF -> serve the 2160p (HLG) tier
-          #   DIRECT_TO_VIEW=0 + PQ_REROUTE  -> EGL/GL path with correct 4K colours
-          # For weak/Amlogic GPUs that drop frames on the GL path, set
-          # F1TV_DIRECT_TO_VIEW=1 (trades correct HDR colours for smoothness).
+          #   F1TV_SMOOTH_TV=1 -> DIRECT_TO_VIEW=1 + PQ_REROUTE=0
+          F1TV_SMOOTH_TV: ${{ inputs.smooth_tv && '1' || '0' }}
           F1TV_HLG_BYPASS: "1"
           F1TV_DISPLAY_HDR_SPOOF: "1"
-          F1TV_DIRECT_TO_VIEW: "0"
-          F1TV_PQ_REROUTE: "1"
           KEYSTORE_PATH: ${{ env.KEYSTORE_PATH || '' }}
           KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS || 'android' }}
           KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS || 'f1tvpatch' }}
@@ -431,7 +437,7 @@ jobs:
       - name: Upload patched APKs
         uses: actions/upload-artifact@v5
         with:
-          name: f1tv-uhd-patched-${{ needs.check.outputs.version_short }}
+          name: ${{ inputs.smooth_tv && format('f1tv-uhd-smooth-tv-patched-{0}', needs.check.outputs.version_short) || format('f1tv-uhd-patched-{0}', needs.check.outputs.version_short) }}
           path: output/
           retention-days: 90
 
@@ -441,7 +447,18 @@ jobs:
         run: |
           TAG="v${{ needs.check.outputs.version_short }}"
           TITLE="F1TV UHD Patched - ${{ needs.check.outputs.version }}"
+          ASSET="output/f1tv-uhd-patched.apkm"
+          INSTALL_NAME="f1tv-uhd-patched.apkm"
+          PROFILE_NOTE="Profile: Standard UHD (EGL/GL render path, better colours)"
           PRERELEASE_FLAG=""
+
+          if [[ "${{ inputs.smooth_tv }}" == "true" ]]; then
+            TAG="${TAG}-smooth-tv"
+            TITLE="F1TV UHD Smooth TV Patched - ${{ needs.check.outputs.version }}"
+            ASSET="output/f1tv-uhd-smooth-tv-patched.apkm"
+            INSTALL_NAME="f1tv-uhd-smooth-tv-patched.apkm"
+            PROFILE_NOTE="Profile: Smooth TV (direct-to-view render path, prioritises frame pacing over HDR colour conversion)"
+          fi
 
           # Non-main branches get a separate pre-release
           BRANCH="${{ github.ref_name }}"
@@ -480,19 +497,20 @@ jobs:
           **Version:** \`${{ needs.check.outputs.version }}\`
           **Branch:** \`${BRANCH}\`
           **${SOURCE_NOTE}**
+          **${PROFILE_NOTE}**
 
           ## Install
 
-          Download \`f1tv-uhd-patched.apkm\` below, then use the install script:
+          Download \`${INSTALL_NAME}\` below, then use the install script:
 
           \`\`\`bash
-          ./scripts/install.sh f1tv-uhd-patched.apkm [device-ip:5555]
+          ./scripts/install.sh ${INSTALL_NAME} [device-ip:5555]
           \`\`\`
 
           See the [README](https://github.com/${{ github.repository }}#installing-on-your-android-tv) for full setup instructions.
           NOTES
           )" \
-            output/f1tv-uhd-patched.apkm
+            "${ASSET}"
 
           echo "release_url=https://github.com/${{ github.repository }}/releases/tag/${TAG}" >> "$GITHUB_OUTPUT"
         env:

@@ -54,6 +54,31 @@ OUTPUT_DIR="$(realpath "$2")"
 [[ -f "${APKM_PATH}" ]] || die "File not found: ${APKM_PATH}"
 mkdir -p "${OUTPUT_DIR}"
 
+PATCH_PROFILE="${F1TV_PATCH_PROFILE:-uhd}"
+if [[ "${F1TV_SMOOTH_TV:-0}" == "1" ]]; then
+    PATCH_PROFILE="smooth-tv"
+fi
+
+case "${PATCH_PROFILE}" in
+    smooth-tv)
+        F1TV_DIRECT_TO_VIEW="${F1TV_DIRECT_TO_VIEW:-1}"
+        F1TV_PQ_REROUTE="${F1TV_PQ_REROUTE:-0}"
+        VERSION_SUFFIX="${F1TV_VERSION_SUFFIX:--UHD-SMOOTH}"
+        OUTPUT_BASENAME="${F1TV_OUTPUT_BASENAME:-f1tv-uhd-smooth-tv-patched.apkm}"
+        info "Patch profile: smooth-tv (direct-to-view, PQ reroute disabled)"
+        ;;
+    uhd)
+        F1TV_DIRECT_TO_VIEW="${F1TV_DIRECT_TO_VIEW:-0}"
+        F1TV_PQ_REROUTE="${F1TV_PQ_REROUTE:-1}"
+        VERSION_SUFFIX="${F1TV_VERSION_SUFFIX:--UHD}"
+        OUTPUT_BASENAME="${F1TV_OUTPUT_BASENAME:-f1tv-uhd-patched.apkm}"
+        info "Patch profile: uhd (EGL/GL render path, PQ reroute enabled)"
+        ;;
+    *)
+        die "Unsupported F1TV_PATCH_PROFILE: ${PATCH_PROFILE}"
+        ;;
+esac
+
 check_prereqs
 
 # ─── Create temp working directory ────────────────────────────────────────────
@@ -660,6 +685,8 @@ PYEOF
     else
         warn "RenderTargetConfig.smali not found, skipping PQ reroute"
     fi
+else
+    info "Skipping PQ reroute (direct-to-view/smooth profile does not use the EGL colour-conversion path)"
 fi
 
 # ─── Spoof display HDR capability (default ON — the 2160p unlock) ───────────
@@ -715,7 +742,7 @@ info "Patching version name..."
 # Patch apktool.yml (manifest versionName)
 APKTOOL_YML="${DECOMPILED}/apktool.yml"
 if [[ -f "${APKTOOL_YML}" ]]; then
-    sed -i 's/\(versionName: .*\)/\1-UHD/' "${APKTOOL_YML}"
+    sed -i "s/\(versionName: .*\)/\1${VERSION_SUFFIX}/" "${APKTOOL_YML}"
     ok "Manifest versionName updated"
 fi
 
@@ -723,13 +750,13 @@ fi
 BUILDCONFIG="$(find "${DECOMPILED}" -name 'BuildConfig.smali' -path '*/formulaone/*' -print -quit)"
 if [[ -n "${BUILDCONFIG}" ]]; then
     # VERSION_NAME is a const-string like: const-string v0, "3.0.47.1-SP153..."
-    sed -i '/:->VERSION_NAME:Ljava\/lang\/String;/,/const-string/{s/\(const-string [^,]*, "\)\([^"]*\)"/\1\2-UHD"/}' "${BUILDCONFIG}"
+    sed -i "/:->VERSION_NAME:Ljava\/lang\/String;/,/const-string/{s/\(const-string [^,]*, \"\)\([^\"]*\)\"/\1\2${VERSION_SUFFIX}\"/}" "${BUILDCONFIG}"
     ok "BuildConfig VERSION_NAME updated"
 else
     # Fallback: search all BuildConfig.smali files
     BUILDCONFIG="$(find "${DECOMPILED}" -name 'BuildConfig.smali' -print -quit)"
     if [[ -n "${BUILDCONFIG}" ]]; then
-        sed -i '/VERSION_NAME/s/\(const-string [^,]*, "\)\([^"]*\)"/\1\2-UHD"/' "${BUILDCONFIG}"
+        sed -i "/VERSION_NAME/s/\(const-string [^,]*, \"\)\([^\"]*\)\"/\1\2${VERSION_SUFFIX}\"/" "${BUILDCONFIG}"
         ok "BuildConfig VERSION_NAME updated (fallback)"
     else
         warn "BuildConfig.smali not found, skipping in-app version patch"
@@ -856,7 +883,7 @@ cp "${ALIGNED_DIR}"/*.apk "${OUTPUT_DIR}/"
 [[ -f "${INFO_JSON}" ]] && cp "${INFO_JSON}" "${OUTPUT_DIR}/"
 
 # Create a .apkm bundle (zip of all APKs + info.json)
-APKM_OUTPUT="${OUTPUT_DIR}/f1tv-uhd-patched.apkm"
+APKM_OUTPUT="${OUTPUT_DIR}/${OUTPUT_BASENAME}"
 (cd "${OUTPUT_DIR}" && zip -q "${APKM_OUTPUT}" *.apk info.json 2>/dev/null || zip -q "${APKM_OUTPUT}" *.apk)
 ok "Created patched bundle: ${APKM_OUTPUT}"
 

@@ -256,12 +256,23 @@ actually unlock 2160p are **HDR advertise** and **display-capability spoof**.
 |---|---|---|
 | `F1TV_HLG_BYPASS` | `1` | Advertise EGL HDR (PQ+HLG) so the backend offers the 2160p tier. Required for 4K. |
 | `F1TV_DISPLAY_HDR_SPOOF` | `1` | Force the display-capability check to accept all HDR types so the core serves 2160p on HDR10-only panels. Required for 4K on the Shield. |
+| `F1TV_SMOOTH_TV` | `0` | Set `1` to build the smooth TV profile: direct decoder-to-SurfaceView rendering, `F1TV_DIRECT_TO_VIEW=1`, `F1TV_PQ_REROUTE=0`, and output `f1tv-uhd-smooth-tv-patched.apkm`. Use this when the TV shows 2160p but advances frames very slowly. |
 | `F1TV_PQ_REROUTE` | `1` | Render the HDR tiles through the EGL PQ colorspace and gamut-convert them correctly (fixes washed-out colours). |
 | `F1TV_DIRECT_TO_VIEW` | `0` | Default off = EGL/GL render path with correct 4K colours. Set `1` to force decoder→SurfaceView direct rendering on weak/Amlogic GPUs that drop frames on the GL path (trades correct HDR colours for smoothness). |
 
 > **Result on an NVIDIA Shield + HDR10 TV:** true **3840×2160** with accurate colours, output as a
 > clean SDR downconvert (the Shield's GPU lacks the HLG EGL colorspace, so full HDR10 to the panel
 > isn't reliable — but the 4K resolution and colour accuracy are the wins).
+
+For TVs that show `3840×2160` but barely advance frames, build the smooth TV profile:
+
+```bash
+F1TV_SMOOTH_TV=1 ./scripts/patch.sh f1tv-source.apkm output/
+./scripts/install.sh output/f1tv-uhd-smooth-tv-patched.apkm [device-ip:5555]
+```
+
+In GitHub Actions, run the workflow manually and enable **smooth_tv**. The release tag gets a
+`-smooth-tv` suffix so it does not overwrite the standard UHD build.
 
 ## License
 
