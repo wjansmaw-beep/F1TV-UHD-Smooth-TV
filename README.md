@@ -1,6 +1,6 @@
 # F1TV UHD Patcher
 
-Automated pipeline that patches the F1TV Android TV app to enable UHD/4K playback on Android TV devices. It now ships separate profiles for NVIDIA Shield-quality output, smoother generic Android TV playback, and a safer reduced target for TVs that cannot sustain full 4K.
+Automated pipeline that patches the F1TV Android TV app to enable UHD/4K playback on Android TV devices. It ships separate profiles for NVIDIA Shield-quality output, smoother generic Android TV playback, and an SDR-safe reduced target for TVs that cannot handle forced HDR cleanly.
 
 ## How it works
 
@@ -18,9 +18,11 @@ Automated pipeline that patches the F1TV Android TV app to enable UHD/4K playbac
 > *both* what the EGL renderer supports *and* what the display reports
 > (`Display.getHdrCapabilities()`). F1's UHD is **HLG**; a panel that reports only HDR10 (like
 > most setups behind an NVIDIA Shield) makes ClearVR reject HLG upstream and fall back to
-> 1620p SDR. The pipeline forces the EGL HDR advertise **and** spoofs the display-capability
+> 1620p SDR. The full-4K profiles force the EGL HDR advertise **and** spoof the display-capability
 > check, so the core serves the 2160p tiles; the device's video pipeline then plays them as
-> HDR10 or a clean 4K SDR downconvert (the same path YouTube HLG uses). **Needs the arm64 build**
+> HDR10 or a clean 4K SDR downconvert (the same path YouTube HLG uses). The `android-tv-safe`
+> profile intentionally leaves those HDR spoofs off for TVs that switch into bad forced HDR mode.
+> Full 4K **needs the arm64 build**
 > — see [Verify 4K is working](#verify-4k-is-working). Genuinely HLG-capable devices get full HDR;
 > HDR10-only panels get accurate 4K. An opt-in `F1TV_PQ_REROUTE` can push some setups to true
 > HDR10 output — see [Build options](#build-options).
@@ -51,7 +53,7 @@ adb connect 192.168.1.100:5555  # Replace with your TV's IP
 # Approve the connection prompt on your TV
 ```
 
-Then download the APKM for your profile from the release page and install it. For most non-Shield Android TVs, start with `f1tv-uhd-smooth-tv-patched.apkm`; if full 4K still advances frame-by-frame, use `f1tv-uhd-android-tv-safe-patched.apkm`.
+Then download the APKM for your profile from the release page and install it. For most non-Shield Android TVs, start with `f1tv-uhd-smooth-tv-patched.apkm`; if full 4K still advances frame-by-frame or your TV switches into a forced HDR mode, use `f1tv-uhd-android-tv-safe-patched.apkm`.
 
 ```bash
 # Uninstall the original F1TV first (required — different signing key)
@@ -176,7 +178,7 @@ If the automatic download fails, you can trigger the workflow manually:
 
 - **With direct URL**: Go to Actions > F1TV UHD Patch > Run workflow, paste an `.apkm` URL
 - **Force rebuild**: Check the "Force rebuild" option to re-patch an existing version
-- **Patch profile**: choose `both-android-tv` to build both Android TV variants, `android-tv-smooth` for full 4K direct rendering, `android-tv-safe` if full 4K still stalls, or `shield-quality` for NVIDIA Shield/strong GPUs.
+- **Patch profile**: choose `both-android-tv` to build both Android TV variants, `android-tv-smooth` for full 4K direct rendering, `android-tv-safe` for SDR-safe playback without forced HDR spoofing, or `shield-quality` for NVIDIA Shield/strong GPUs.
 - **Download profile**: choose the Google Play device profile. Use `nvidia_shield_tv` for arm64 bundles with the bundled custom apkeep release.
 
 ## Project structure
@@ -229,8 +231,9 @@ If you're stuck at 1620p, check in order:
 
 1. **ABI** — `adb shell getprop ro.product.cpu.abi` should be `arm64-v8a`, and you must have installed
    the `config.arm64_v8a.apk` split (not `armeabi_v7a`). A 32-bit install can't do 4K.
-2. **Build flags** — the bundle must be built with `F1TV_HLG_BYPASS` **and** `F1TV_DISPLAY_HDR_SPOOF`
-   on (both default; CI sets them). Public releases from before these defaults do **not** have them.
+2. **Build flags** — full 2160p bundles must be built with `F1TV_HLG_BYPASS` **and**
+   `F1TV_DISPLAY_HDR_SPOOF` on. The `shield-quality` and `android-tv-smooth` profiles enable them by
+   default. The `android-tv-safe` profile disables them by default to avoid a forced HDR signal.
 3. **4K TV** — the panel must actually be 4K (the decode target follows the display). An HDR-capable
    panel additionally gets HDR output.
 
@@ -242,8 +245,8 @@ actually unlock 2160p are **HDR advertise** and **display-capability spoof**.
 | Patch | File · method | What it does |
 |---|---|---|
 | UHD / device unlock | `DeviceSupportImpl` · `validateIsUhdSupportedDevice`, `validateTmSdkSupport`, `validateLowRamDeviceSupport`, `validateApiLevelSupport` | Each returns `Pair(true, null)`, so the device passes every UHD-capability gate (brand/product whitelist, secure-decoder probe, low-RAM check, API-level check). |
-| **Display-capability spoof** *(2160p unlock)* | `DeviceParameters` · `doesDisplaySupport` | Returns `true` so the core believes the panel accepts F1's HLG and serves the **2160p tiles** instead of rejecting HLG upstream and dropping to 1620p SDR. Default on; disable with `F1TV_DISPLAY_HDR_SPOOF=0`. |
-| **HDR advertise** *(2160p unlock)* | `EGLRenderTarget` · `getIsBt2020HlgExtensionSupported` | Returns `true`, so `DeviceParameters` reports PQ+HLG EGL support and the backend offers the HDR 2160p tier. Default on; disable with `F1TV_HLG_BYPASS=0`. |
+| **Display-capability spoof** *(2160p unlock)* | `DeviceParameters` · `doesDisplaySupport` | Returns `true` so the core believes the panel accepts F1's HLG and serves the **2160p tiles** instead of rejecting HLG upstream and dropping to 1620p SDR. Enabled by the full-4K profiles; disabled by `android-tv-safe`. |
+| **HDR advertise** *(2160p unlock)* | `EGLRenderTarget` · `getIsBt2020HlgExtensionSupported` | Returns `true`, so `DeviceParameters` reports PQ+HLG EGL support and the backend offers the HDR 2160p tier. Enabled by the full-4K profiles; disabled by `android-tv-safe`. |
 | Quality selector | `DiagnosticsPreferenceManagerImpl` · `isVideoQualityEnabled` | Returns `true` so the in-app quality picker is visible. (The debug overlays are intentionally left off.) |
 | Display size target | `TrueTVDisplaySizeHelper` · `getDefaultDisplaySize` | Reports the selected profile target via `getTrueDisplaySizeIfTV`, lifting or tuning ClearVR's ~1.5× display-size cap. Shield/smooth report `3840×2160`; safe reports `1920×1080`, which caps the effective stream target around `2880×1620`. |
 | PQ colour reroute *(correct colours)* | `RenderTargetConfig` · `requireHLG`, `require2020PQ` | Routes F1's HLG content through the EGL **PQ** colorspace the device supports (`requireHLG→false`, `require2020PQ→PQ‖HLG`) so the 4K tiles are correctly gamut-converted instead of shown washed-out. Default on; disable with `F1TV_PQ_REROUTE=0`. |
@@ -259,9 +262,9 @@ actually unlock 2160p are **HDR advertise** and **display-capability spoof**.
 |---|---|---|---|---|---|
 | `shield-quality` | `f1tv-uhd-patched.apkm` | EGL/GL + PQ reroute | `3840×2160` | `16/5/5` | NVIDIA Shield or stronger GPUs where colour correctness matters most. |
 | `android-tv-smooth` | `f1tv-uhd-smooth-tv-patched.apkm` | Direct-to-view | `3840×2160` | `16/5/5` | TVs that can decode full 4K but drop frames on the EGL/GL path. |
-| `android-tv-safe` | `f1tv-uhd-android-tv-safe-patched.apkm` | Direct-to-view | reports `1920×1080` for an effective cap around `2880×1620` | `8/4/4` | TVs that show 2160p but barely advance frames or run out of decoder resources. |
+| `android-tv-safe` | `f1tv-uhd-android-tv-safe-patched.apkm` | Direct-to-view, no forced HDR spoof | reports `1920×1080` for an effective SDR-safe target | `8/4/4` | TVs that show forced HDR, barely advance frames, or run out of decoder resources. |
 
-Recommended order for generic Android TV: try `android-tv-smooth` first, then `android-tv-safe` if playback still stalls.
+Recommended order for generic Android TV: try `android-tv-smooth` first, then `android-tv-safe` if playback still stalls or the TV switches into unwanted HDR mode.
 
 ## Build options
 
@@ -270,8 +273,8 @@ Recommended order for generic Android TV: try `android-tv-smooth` first, then `a
 | Variable | Default | Effect |
 |---|---|---|
 | `F1TV_PATCH_PROFILE` | `shield-quality` | Selects `shield-quality`, `android-tv-smooth`, or `android-tv-safe`. The workflow also offers `both-android-tv`, which builds smooth and safe releases from the same source APKM. |
-| `F1TV_HLG_BYPASS` | `1` | Advertise EGL HDR (PQ+HLG) so the backend offers the 2160p tier. Required for 4K. |
-| `F1TV_DISPLAY_HDR_SPOOF` | `1` | Force the display-capability check to accept all HDR types so the core serves 2160p on HDR10-only panels. Required for 4K on the Shield. |
+| `F1TV_HLG_BYPASS` | profile-based | Advertise EGL HDR (PQ+HLG) so the backend offers the 2160p tier. Enabled by `shield-quality` and `android-tv-smooth`; disabled by `android-tv-safe`. |
+| `F1TV_DISPLAY_HDR_SPOOF` | profile-based | Force the display-capability check to accept all HDR types so the core serves 2160p on HDR10-only panels. Enabled by `shield-quality` and `android-tv-smooth`; disabled by `android-tv-safe`. |
 | `F1TV_DIRECT_TO_VIEW` | profile-based | Forces decoder-to-SurfaceView rendering when `1`. Android TV profiles default to `1`. |
 | `F1TV_PQ_REROUTE` | profile-based | Enables EGL PQ colour reroute when `1`. Shield-quality defaults to `1`; Android TV profiles default to `0`. |
 | `F1TV_DISABLE_NVIDIA_QUIRK` | profile-based | Disables the NVIDIA no-post-process workaround only for profiles that need it. |
@@ -292,7 +295,7 @@ F1TV_PATCH_PROFILE=android-tv-smooth ./scripts/patch.sh f1tv-source.apkm output/
 ./scripts/install.sh output/f1tv-uhd-smooth-tv-patched.apkm [device-ip:5555]
 ```
 
-If it still stalls, build the safer reduced target:
+If it still stalls or your TV switches into a forced HDR mode, build the safer SDR target:
 
 ```bash
 F1TV_PATCH_PROFILE=android-tv-safe ./scripts/patch.sh f1tv-source.apkm output/

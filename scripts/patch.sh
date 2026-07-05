@@ -63,6 +63,8 @@ case "${PATCH_PROFILE}" in
     uhd|shield-quality)
         PATCH_PROFILE="shield-quality"
         F1TV_DIRECT_TO_VIEW="${F1TV_DIRECT_TO_VIEW:-0}"
+        F1TV_HLG_BYPASS="${F1TV_HLG_BYPASS:-1}"
+        F1TV_DISPLAY_HDR_SPOOF="${F1TV_DISPLAY_HDR_SPOOF:-1}"
         F1TV_PQ_REROUTE="${F1TV_PQ_REROUTE:-1}"
         F1TV_DISABLE_NVIDIA_QUIRK="${F1TV_DISABLE_NVIDIA_QUIRK:-1}"
         F1TV_MODEL_SPOOF="${F1TV_MODEL_SPOOF:-Chromecast}"
@@ -78,6 +80,8 @@ case "${PATCH_PROFILE}" in
     smooth-tv|android-tv-smooth)
         PATCH_PROFILE="android-tv-smooth"
         F1TV_DIRECT_TO_VIEW="${F1TV_DIRECT_TO_VIEW:-1}"
+        F1TV_HLG_BYPASS="${F1TV_HLG_BYPASS:-1}"
+        F1TV_DISPLAY_HDR_SPOOF="${F1TV_DISPLAY_HDR_SPOOF:-1}"
         F1TV_PQ_REROUTE="${F1TV_PQ_REROUTE:-0}"
         F1TV_DISABLE_NVIDIA_QUIRK="${F1TV_DISABLE_NVIDIA_QUIRK:-0}"
         F1TV_MODEL_SPOOF="${F1TV_MODEL_SPOOF:-Chromecast}"
@@ -92,6 +96,8 @@ case "${PATCH_PROFILE}" in
         ;;
     android-tv-safe)
         F1TV_DIRECT_TO_VIEW="${F1TV_DIRECT_TO_VIEW:-1}"
+        F1TV_HLG_BYPASS="${F1TV_HLG_BYPASS:-0}"
+        F1TV_DISPLAY_HDR_SPOOF="${F1TV_DISPLAY_HDR_SPOOF:-0}"
         F1TV_PQ_REROUTE="${F1TV_PQ_REROUTE:-0}"
         F1TV_DISABLE_NVIDIA_QUIRK="${F1TV_DISABLE_NVIDIA_QUIRK:-0}"
         F1TV_MODEL_SPOOF="${F1TV_MODEL_SPOOF:-Chromecast}"
@@ -102,7 +108,7 @@ case "${PATCH_PROFILE}" in
         F1TV_DISPLAY_HEIGHT="${F1TV_DISPLAY_HEIGHT:-1080}"
         VERSION_SUFFIX="${F1TV_VERSION_SUFFIX:--UHD-SAFE}"
         OUTPUT_BASENAME="${F1TV_OUTPUT_BASENAME:-f1tv-uhd-android-tv-safe-patched.apkm}"
-        info "Patch profile: android-tv-safe (direct-to-view, reduced 1620p target)"
+        info "Patch profile: android-tv-safe (direct-to-view, SDR-safe reduced target)"
         ;;
     *)
         die "Unsupported F1TV_PATCH_PROFILE: ${PATCH_PROFILE}"

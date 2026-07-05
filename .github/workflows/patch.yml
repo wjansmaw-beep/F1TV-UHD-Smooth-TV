@@ -487,8 +487,6 @@ jobs:
             mkdir -p "${profile_output}"
             echo "Building patch profile: ${profile}"
             F1TV_PATCH_PROFILE="${profile}" \
-              F1TV_HLG_BYPASS="1" \
-              F1TV_DISPLAY_HDR_SPOOF="1" \
               KEYSTORE_PATH="${KEYSTORE_PATH:-}" \
               KEYSTORE_PASS="${KEYSTORE_PASS:-android}" \
               KEYSTORE_ALIAS="${KEYSTORE_ALIAS:-f1tvpatch}" \
@@ -499,9 +497,8 @@ jobs:
           # Unlock the 2160p tier. The normal build keeps the EGL/GL path for
           # colour correctness; Android TV profiles use decoder-to-SurfaceView for
           # TVs that show 2160p but advance frames very slowly.
-          #   HLG_BYPASS + DISPLAY_HDR_SPOOF -> serve the 2160p (HLG) tier
-          #   android-tv-smooth -> DIRECT_TO_VIEW=1 + full 2160p target
-          #   android-tv-safe   -> DIRECT_TO_VIEW=1 + reduced 1620p target
+          #   shield-quality/android-tv-smooth -> profile defaults unlock HDR 2160p
+          #   android-tv-safe -> profile defaults keep HDR spoofing off for SDR TVs
           KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS || 'android' }}
           KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS || 'f1tvpatch' }}
 
@@ -558,7 +555,7 @@ jobs:
               TITLE="F1TV UHD Android TV Safe Patched - ${{ needs.check.outputs.version }}"
               ASSET="output/f1tv-uhd-android-tv-safe-patched.apkm"
               INSTALL_NAME="f1tv-uhd-android-tv-safe-patched.apkm"
-              PROFILE_NOTE="Profile: Android TV Safe (direct-to-view render path, reduced 1620p target)"
+              PROFILE_NOTE="Profile: Android TV Safe (direct-to-view render path, SDR-safe reduced target; no forced HDR spoof)"
             fi
 
             # Non-main branches get a separate pre-release
