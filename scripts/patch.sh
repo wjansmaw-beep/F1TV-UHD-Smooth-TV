@@ -585,16 +585,16 @@ replacement = """.method private static getDefaultDisplaySize(Landroid/content/C
     # UHD Patch: report the profile-selected display target
     new-instance v0, Landroid/graphics/Point;
 
-    const/16 v1, {width_hex}
+    const/16 v1, __WIDTH_HEX__
 
-    const/16 v2, {height_hex}
+    const/16 v2, __HEIGHT_HEX__
 
     invoke-direct {v0, v1, v2}, Landroid/graphics/Point;-><init>(II)V
 
     sput-object v0, Lcom/tiledmedia/clearvrview/TrueTVDisplaySizeHelper;->trueDisplaySize:Landroid/graphics/Point;
 
     return-object v0
-.end method""".format(width_hex=hex(width), height_hex=hex(height))
+.end method""".replace("__WIDTH_HEX__", hex(width)).replace("__HEIGHT_HEX__", hex(height))
 
 content, count = re.subn(pattern, replacement, content, flags=re.DOTALL)
 if count == 0:
