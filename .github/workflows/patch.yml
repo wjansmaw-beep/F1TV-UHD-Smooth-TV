@@ -20,6 +20,24 @@ on:
         required: false
         type: boolean
         default: false
+      patch_profile:
+        description: "Patch profile to build"
+        required: false
+        type: choice
+        default: android-tv-smooth
+        options:
+          - shield-quality
+          - android-tv-smooth
+          - android-tv-safe
+      download_profile:
+        description: "Google Play device profile used for the primary bundle download"
+        required: false
+        type: choice
+        default: nvidia_shield_tv
+        options:
+          - nvidia_shield_tv
+          - generic_arm64_tv
+          - generic_armv7_tv
 
 permissions:
   contents: write
@@ -81,8 +99,11 @@ jobs:
         if: steps.version.outputs.version_short != ''
         run: |
           TAG="v${{ steps.version.outputs.version_short }}"
-          if [[ "${{ inputs.smooth_tv }}" == "true" ]]; then
+          PROFILE="${{ inputs.smooth_tv && 'android-tv-smooth' || inputs.patch_profile || 'android-tv-smooth' }}"
+          if [[ "${PROFILE}" == "android-tv-smooth" ]]; then
             TAG="${TAG}-smooth-tv"
+          elif [[ "${PROFILE}" == "android-tv-safe" ]]; then
+            TAG="${TAG}-android-tv-safe"
           fi
           # Dev branch uses a separate tag
           if [[ "${{ github.ref_name }}" != "main" ]]; then
@@ -209,7 +230,7 @@ jobs:
           path: /usr/local/bin/apkeep
           key: apkeep-custom-${{ env.APKEEP_CUSTOM_TAG }}
 
-      - name: Install custom apkeep (with Shield TV profile)
+      - name: Install custom apkeep (with Android TV profiles)
         if: ${{ !inputs.apkm_url && steps.apkeep-custom-cache.outputs.cache-hit != 'true' }}
         run: |
           curl -sSL "https://github.com/Alexvbp/apkeep/releases/download/${APKEEP_CUSTOM_TAG}/apkeep-x86_64-linux.tar.gz" | tar xz -C /usr/local/bin/
@@ -221,11 +242,12 @@ jobs:
         id: download_gplay
         run: |
           mkdir -p download
-          echo "Downloading F1TV from Google Play (NVIDIA Shield TV profile)..."
+          GPLAY_DEVICE="${{ inputs.download_profile || 'nvidia_shield_tv' }}"
+          echo "Downloading F1TV from Google Play (${GPLAY_DEVICE} profile)..."
           apkeep -d google-play \
             -e "${GOOGLE_EMAIL}" \
             -t "${GOOGLE_AAS_TOKEN}" \
-            -o "device=nvidia_shield_tv,split_apk=true" \
+            -o "device=${GPLAY_DEVICE},split_apk=true" \
             --accept-tos \
             -a "com.formulaone.production" \
             download/
@@ -425,8 +447,10 @@ jobs:
           # colour correctness; smooth_tv switches to decoder-to-SurfaceView for
           # TVs that show 2160p but advance frames very slowly.
           #   HLG_BYPASS + DISPLAY_HDR_SPOOF -> serve the 2160p (HLG) tier
-          #   F1TV_SMOOTH_TV=1 -> DIRECT_TO_VIEW=1 + PQ_REROUTE=0
+          #   android-tv-smooth -> DIRECT_TO_VIEW=1 + full 2160p target
+          #   android-tv-safe   -> DIRECT_TO_VIEW=1 + reduced 1620p target
           F1TV_SMOOTH_TV: ${{ inputs.smooth_tv && '1' || '0' }}
+          F1TV_PATCH_PROFILE: ${{ inputs.smooth_tv && 'android-tv-smooth' || inputs.patch_profile || 'android-tv-smooth' }}
           F1TV_HLG_BYPASS: "1"
           F1TV_DISPLAY_HDR_SPOOF: "1"
           KEYSTORE_PATH: ${{ env.KEYSTORE_PATH || '' }}
@@ -437,7 +461,7 @@ jobs:
       - name: Upload patched APKs
         uses: actions/upload-artifact@v5
         with:
-          name: ${{ inputs.smooth_tv && format('f1tv-uhd-smooth-tv-patched-{0}', needs.check.outputs.version_short) || format('f1tv-uhd-patched-{0}', needs.check.outputs.version_short) }}
+          name: f1tv-patched-${{ needs.check.outputs.version_short }}
           path: output/
           retention-days: 90
 
@@ -447,17 +471,24 @@ jobs:
         run: |
           TAG="v${{ needs.check.outputs.version_short }}"
           TITLE="F1TV UHD Patched - ${{ needs.check.outputs.version }}"
+          PROFILE="${{ inputs.smooth_tv && 'android-tv-smooth' || inputs.patch_profile || 'android-tv-smooth' }}"
           ASSET="output/f1tv-uhd-patched.apkm"
           INSTALL_NAME="f1tv-uhd-patched.apkm"
           PROFILE_NOTE="Profile: Standard UHD (EGL/GL render path, better colours)"
           PRERELEASE_FLAG=""
 
-          if [[ "${{ inputs.smooth_tv }}" == "true" ]]; then
+          if [[ "${PROFILE}" == "android-tv-smooth" ]]; then
             TAG="${TAG}-smooth-tv"
             TITLE="F1TV UHD Smooth TV Patched - ${{ needs.check.outputs.version }}"
             ASSET="output/f1tv-uhd-smooth-tv-patched.apkm"
             INSTALL_NAME="f1tv-uhd-smooth-tv-patched.apkm"
-            PROFILE_NOTE="Profile: Smooth TV (direct-to-view render path, prioritises frame pacing over HDR colour conversion)"
+            PROFILE_NOTE="Profile: Android TV Smooth (direct-to-view render path, full 2160p target)"
+          elif [[ "${PROFILE}" == "android-tv-safe" ]]; then
+            TAG="${TAG}-android-tv-safe"
+            TITLE="F1TV UHD Android TV Safe Patched - ${{ needs.check.outputs.version }}"
+            ASSET="output/f1tv-uhd-android-tv-safe-patched.apkm"
+            INSTALL_NAME="f1tv-uhd-android-tv-safe-patched.apkm"
+            PROFILE_NOTE="Profile: Android TV Safe (direct-to-view render path, reduced 1620p target)"
           fi
 
           # Non-main branches get a separate pre-release

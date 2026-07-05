@@ -124,6 +124,12 @@ if [[ "${DEVICE_ABI}" == "arm64-v8a" && "${SELECTED_ABI}" == "armeabi_v7a" ]]; t
     warn "This bundle has no arm64-v8a split — installing 32-bit libs on a 64-bit device."
     warn "ClearVR will run 32-bit and 4K may fail (TM4014 / decoder resource errors)."
     warn "For full 4K on this device, use a bundle built from the Google Play (arm64) source."
+    if [[ "${F1TV_ALLOW_32BIT:-0}" != "1" ]]; then
+        die "Refusing 32-bit install on an arm64 device. Set F1TV_ALLOW_32BIT=1 to override."
+    fi
+elif [[ -z "${SELECTED_ABI}" ]]; then
+    warn "No ABI split matched ${DEVICE_ABI}; installing base/locale/DPI APKs only."
+    warn "If this is a split bundle, playback may fail because native ClearVR libs are missing."
 fi
 
 # Find locale and DPI splits
