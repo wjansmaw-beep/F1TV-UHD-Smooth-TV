@@ -15,11 +15,6 @@ on:
         required: false
         type: boolean
         default: false
-      smooth_tv:
-        description: "Build a smooth TV variant using decoder-to-SurfaceView rendering"
-        required: false
-        type: boolean
-        default: false
       patch_profile:
         description: "Patch profile to build"
         required: false
@@ -29,6 +24,7 @@ on:
           - shield-quality
           - android-tv-smooth
           - android-tv-safe
+          - both-android-tv
       download_profile:
         description: "Google Play device profile used for the primary bundle download"
         required: false
@@ -36,7 +32,6 @@ on:
         default: nvidia_shield_tv
         options:
           - nvidia_shield_tv
-          - generic_arm64_tv
           - generic_armv7_tv
 
 permissions:
@@ -82,8 +77,13 @@ jobs:
           TV_VERSION=$(grep -oP '[\d.]+-\S*-tv' /tmp/apkeep_versions.txt | tail -1)
           if [[ -z "${TV_VERSION}" ]]; then
             echo "::warning::No TV variant found in APKPure version list"
-            echo "version=" >> "$GITHUB_OUTPUT"
-            echo "version_short=" >> "$GITHUB_OUTPUT"
+            if [[ -n "${{ inputs.apkm_url }}" ]]; then
+              echo "version=manual-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+              echo "version_short=manual-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+            else
+              echo "version=" >> "$GITHUB_OUTPUT"
+              echo "version_short=" >> "$GITHUB_OUTPUT"
+            fi
             exit 0
           fi
 
@@ -98,18 +98,34 @@ jobs:
         id: existing
         if: steps.version.outputs.version_short != ''
         run: |
-          TAG="v${{ steps.version.outputs.version_short }}"
-          PROFILE="${{ inputs.smooth_tv && 'android-tv-smooth' || inputs.patch_profile || 'android-tv-smooth' }}"
-          if [[ "${PROFILE}" == "android-tv-smooth" ]]; then
-            TAG="${TAG}-smooth-tv"
-          elif [[ "${PROFILE}" == "android-tv-safe" ]]; then
-            TAG="${TAG}-android-tv-safe"
+          PROFILE="${{ inputs.patch_profile || 'android-tv-smooth' }}"
+          if [[ "${PROFILE}" == "both-android-tv" ]]; then
+            PROFILES=("android-tv-smooth" "android-tv-safe")
+          else
+            PROFILES=("${PROFILE}")
           fi
-          # Dev branch uses a separate tag
-          if [[ "${{ github.ref_name }}" != "main" ]]; then
-            TAG="${TAG}-${{ github.ref_name }}"
-          fi
-          if gh release view "${TAG}" &>/dev/null; then
+
+          all_exist=true
+          for profile in "${PROFILES[@]}"; do
+            TAG="v${{ steps.version.outputs.version_short }}"
+            if [[ "${profile}" == "android-tv-smooth" ]]; then
+              TAG="${TAG}-smooth-tv"
+            elif [[ "${profile}" == "android-tv-safe" ]]; then
+              TAG="${TAG}-android-tv-safe"
+            fi
+            # Dev branch uses a separate tag
+            if [[ "${{ github.ref_name }}" != "main" ]]; then
+              TAG="${TAG}-${{ github.ref_name }}"
+            fi
+            if gh release view "${TAG}" &>/dev/null; then
+              echo "Release ${TAG} exists"
+            else
+              echo "Release ${TAG} is missing"
+              all_exist=false
+            fi
+          done
+
+          if [[ "${all_exist}" == "true" ]]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -120,15 +136,15 @@ jobs:
       - name: Decide whether to build
         id: decide
         run: |
-          if [[ -z "${{ steps.version.outputs.version_short }}" ]]; then
+          if [[ -n "${{ inputs.apkm_url }}" ]]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "Manual APKM URL provided"
+          elif [[ -z "${{ steps.version.outputs.version_short }}" ]]; then
             echo "should_build=false" >> "$GITHUB_OUTPUT"
             echo "No TV version found, skipping"
           elif [[ "${{ inputs.force }}" == "true" ]]; then
             echo "should_build=true" >> "$GITHUB_OUTPUT"
             echo "Forced build requested"
-          elif [[ -n "${{ inputs.apkm_url }}" ]]; then
-            echo "should_build=true" >> "$GITHUB_OUTPUT"
-            echo "Manual APKM URL provided"
           elif [[ "${{ steps.existing.outputs.exists }}" == "false" ]]; then
             echo "should_build=true" >> "$GITHUB_OUTPUT"
             echo "New version: v${{ steps.version.outputs.version_short }}"
@@ -236,7 +252,7 @@ jobs:
           curl -sSL "https://github.com/Alexvbp/apkeep/releases/download/${APKEEP_CUSTOM_TAG}/apkeep-x86_64-linux.tar.gz" | tar xz -C /usr/local/bin/
           chmod +x /usr/local/bin/apkeep
 
-      # ── Option A: Download from Google Play (arm64 via Shield profile) ──
+      # ── Option A: Download from Google Play (configured Android TV profile) ──
       - name: Download from Google Play
         if: ${{ !inputs.apkm_url && env.GOOGLE_EMAIL != '' }}
         id: download_gplay
@@ -441,19 +457,38 @@ jobs:
       - name: Patch APKM
         run: |
           chmod +x scripts/patch.sh
-          bash scripts/patch.sh "${{ steps.apkm.outputs.path }}" output/
+          PROFILE="${{ inputs.patch_profile || 'android-tv-smooth' }}"
+          if [[ "${PROFILE}" == "both-android-tv" ]]; then
+            PROFILES=("android-tv-smooth" "android-tv-safe")
+          else
+            PROFILES=("${PROFILE}")
+          fi
+
+          mkdir -p output
+          if [[ -z "${KEYSTORE_PATH:-}" ]]; then
+            KEYSTORE_PATH="${RUNNER_TEMP}/f1tv-patch.keystore"
+            export KEYSTORE_PATH
+          fi
+          for profile in "${PROFILES[@]}"; do
+            profile_output="output/${profile}"
+            mkdir -p "${profile_output}"
+            echo "Building patch profile: ${profile}"
+            F1TV_PATCH_PROFILE="${profile}" \
+              F1TV_HLG_BYPASS="1" \
+              F1TV_DISPLAY_HDR_SPOOF="1" \
+              KEYSTORE_PATH="${KEYSTORE_PATH:-}" \
+              KEYSTORE_PASS="${KEYSTORE_PASS:-android}" \
+              KEYSTORE_ALIAS="${KEYSTORE_ALIAS:-f1tvpatch}" \
+              bash scripts/patch.sh "${{ steps.apkm.outputs.path }}" "${profile_output}"
+            cp "${profile_output}"/*.apkm output/
+          done
         env:
           # Unlock the 2160p tier. The normal build keeps the EGL/GL path for
-          # colour correctness; smooth_tv switches to decoder-to-SurfaceView for
+          # colour correctness; Android TV profiles use decoder-to-SurfaceView for
           # TVs that show 2160p but advance frames very slowly.
           #   HLG_BYPASS + DISPLAY_HDR_SPOOF -> serve the 2160p (HLG) tier
           #   android-tv-smooth -> DIRECT_TO_VIEW=1 + full 2160p target
           #   android-tv-safe   -> DIRECT_TO_VIEW=1 + reduced 1620p target
-          F1TV_SMOOTH_TV: ${{ inputs.smooth_tv && '1' || '0' }}
-          F1TV_PATCH_PROFILE: ${{ inputs.smooth_tv && 'android-tv-smooth' || inputs.patch_profile || 'android-tv-smooth' }}
-          F1TV_HLG_BYPASS: "1"
-          F1TV_DISPLAY_HDR_SPOOF: "1"
-          KEYSTORE_PATH: ${{ env.KEYSTORE_PATH || '' }}
           KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS || 'android' }}
           KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS || 'f1tvpatch' }}
 
@@ -469,42 +504,14 @@ jobs:
       - name: Create release
         id: release
         run: |
-          TAG="v${{ needs.check.outputs.version_short }}"
-          TITLE="F1TV UHD Patched - ${{ needs.check.outputs.version }}"
-          PROFILE="${{ inputs.smooth_tv && 'android-tv-smooth' || inputs.patch_profile || 'android-tv-smooth' }}"
-          ASSET="output/f1tv-uhd-patched.apkm"
-          INSTALL_NAME="f1tv-uhd-patched.apkm"
-          PROFILE_NOTE="Profile: Standard UHD (EGL/GL render path, better colours)"
-          PRERELEASE_FLAG=""
-
-          if [[ "${PROFILE}" == "android-tv-smooth" ]]; then
-            TAG="${TAG}-smooth-tv"
-            TITLE="F1TV UHD Smooth TV Patched - ${{ needs.check.outputs.version }}"
-            ASSET="output/f1tv-uhd-smooth-tv-patched.apkm"
-            INSTALL_NAME="f1tv-uhd-smooth-tv-patched.apkm"
-            PROFILE_NOTE="Profile: Android TV Smooth (direct-to-view render path, full 2160p target)"
-          elif [[ "${PROFILE}" == "android-tv-safe" ]]; then
-            TAG="${TAG}-android-tv-safe"
-            TITLE="F1TV UHD Android TV Safe Patched - ${{ needs.check.outputs.version }}"
-            ASSET="output/f1tv-uhd-android-tv-safe-patched.apkm"
-            INSTALL_NAME="f1tv-uhd-android-tv-safe-patched.apkm"
-            PROFILE_NOTE="Profile: Android TV Safe (direct-to-view render path, reduced 1620p target)"
+          PROFILE_INPUT="${{ inputs.patch_profile || 'android-tv-smooth' }}"
+          if [[ "${PROFILE_INPUT}" == "both-android-tv" ]]; then
+            PROFILES=("android-tv-smooth" "android-tv-safe")
+          else
+            PROFILES=("${PROFILE_INPUT}")
           fi
 
-          # Non-main branches get a separate pre-release
           BRANCH="${{ github.ref_name }}"
-          if [[ "${BRANCH}" != "main" ]]; then
-            TAG="${TAG}-${BRANCH}"
-            TITLE="${TITLE} (${BRANCH})"
-            PRERELEASE_FLAG="--prerelease"
-          fi
-
-          # Delete existing release if force-rebuilding
-          if [[ "${{ inputs.force }}" == "true" ]]; then
-            gh release delete "${TAG}" --yes 2>/dev/null || true
-            git push --delete origin "${TAG}" 2>/dev/null || true
-          fi
-
           SOURCE="${{ steps.apkm.outputs.source }}"
           if [[ "${SOURCE}" == "google-play" ]]; then
             if [[ "${{ steps.download_armv7.outcome }}" == "success" ]]; then
@@ -518,11 +525,51 @@ jobs:
             SOURCE_NOTE="Source: ${SOURCE:-manual}"
           fi
 
-          gh release create "${TAG}" \
-            --title "${TITLE}" \
-            --target "${BRANCH}" \
-            ${PRERELEASE_FLAG} \
-            --notes "$(cat <<NOTES
+          LAST_RELEASE_URL=""
+          for profile in "${PROFILES[@]}"; do
+            TAG="v${{ needs.check.outputs.version_short }}"
+            TITLE="F1TV UHD Patched - ${{ needs.check.outputs.version }}"
+            ASSET="output/f1tv-uhd-patched.apkm"
+            INSTALL_NAME="f1tv-uhd-patched.apkm"
+            PROFILE_NOTE="Profile: Shield Quality (EGL/GL render path, better colours)"
+            PRERELEASE_FLAG=""
+
+            if [[ "${profile}" == "android-tv-smooth" ]]; then
+              TAG="${TAG}-smooth-tv"
+              TITLE="F1TV UHD Smooth TV Patched - ${{ needs.check.outputs.version }}"
+              ASSET="output/f1tv-uhd-smooth-tv-patched.apkm"
+              INSTALL_NAME="f1tv-uhd-smooth-tv-patched.apkm"
+              PROFILE_NOTE="Profile: Android TV Smooth (direct-to-view render path, full 2160p target)"
+            elif [[ "${profile}" == "android-tv-safe" ]]; then
+              TAG="${TAG}-android-tv-safe"
+              TITLE="F1TV UHD Android TV Safe Patched - ${{ needs.check.outputs.version }}"
+              ASSET="output/f1tv-uhd-android-tv-safe-patched.apkm"
+              INSTALL_NAME="f1tv-uhd-android-tv-safe-patched.apkm"
+              PROFILE_NOTE="Profile: Android TV Safe (direct-to-view render path, reduced 1620p target)"
+            fi
+
+            # Non-main branches get a separate pre-release
+            if [[ "${BRANCH}" != "main" ]]; then
+              TAG="${TAG}-${BRANCH}"
+              TITLE="${TITLE} (${BRANCH})"
+              PRERELEASE_FLAG="--prerelease"
+            fi
+
+            # Delete existing release if force-rebuilding
+            if [[ "${{ inputs.force }}" == "true" ]]; then
+              gh release delete "${TAG}" --yes 2>/dev/null || true
+              git push --delete origin "${TAG}" 2>/dev/null || true
+            elif gh release view "${TAG}" &>/dev/null; then
+              echo "Release ${TAG} already exists, skipping"
+              LAST_RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG}"
+              continue
+            fi
+
+            gh release create "${TAG}" \
+              --title "${TITLE}" \
+              --target "${BRANCH}" \
+              ${PRERELEASE_FLAG} \
+              --notes "$(cat <<NOTES
           Patched F1TV Android TV app with UHD/4K enabled.
 
           **Version:** \`${{ needs.check.outputs.version }}\`
@@ -540,10 +587,13 @@ jobs:
 
           See the [README](https://github.com/${{ github.repository }}#installing-on-your-android-tv) for full setup instructions.
           NOTES
-          )" \
-            "${ASSET}"
+            )" \
+              "${ASSET}"
 
-          echo "release_url=https://github.com/${{ github.repository }}/releases/tag/${TAG}" >> "$GITHUB_OUTPUT"
+            LAST_RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG}"
+          done
+
+          echo "release_url=${LAST_RELEASE_URL}" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

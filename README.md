@@ -130,7 +130,7 @@ Fork this repo and enable GitHub Actions in the Actions tab.
 
 ### 2. Custom apkeep fork
 
-The pipeline uses a custom build of [apkeep](https://github.com/EFForg/apkeep) with Android TV device profiles added to [rs-google-play](https://github.com/EFForg/rs-google-play). This allows downloading native split APKs directly from Google Play. The repo includes `nvidia_shield_tv`, `generic_arm64_tv`, and `generic_armv7_tv` profile files; the custom apkeep binary must include whichever profile you select in the workflow.
+The pipeline uses a custom build of [apkeep](https://github.com/EFForg/apkeep) with Android TV device profiles added to [rs-google-play](https://github.com/EFForg/rs-google-play). This allows downloading native split APKs directly from Google Play. The workflow currently exposes the profiles known by the bundled custom apkeep release: `nvidia_shield_tv` and `generic_armv7_tv`. The repo also includes `generic_arm64_tv.properties` as a template for a future custom apkeep build.
 
 To set up your own:
 
@@ -176,8 +176,8 @@ If the automatic download fails, you can trigger the workflow manually:
 
 - **With direct URL**: Go to Actions > F1TV UHD Patch > Run workflow, paste an `.apkm` URL
 - **Force rebuild**: Check the "Force rebuild" option to re-patch an existing version
-- **Patch profile**: choose `android-tv-smooth` for most TVs, `android-tv-safe` if full 4K still stalls, or `shield-quality` for NVIDIA Shield/strong GPUs
-- **Download profile**: choose the Google Play device profile. Use `nvidia_shield_tv` unless your custom apkeep binary includes `generic_arm64_tv`.
+- **Patch profile**: choose `both-android-tv` to build both Android TV variants, `android-tv-smooth` for full 4K direct rendering, `android-tv-safe` if full 4K still stalls, or `shield-quality` for NVIDIA Shield/strong GPUs.
+- **Download profile**: choose the Google Play device profile. Use `nvidia_shield_tv` for arm64 bundles with the bundled custom apkeep release.
 
 ## Project structure
 
@@ -245,7 +245,7 @@ actually unlock 2160p are **HDR advertise** and **display-capability spoof**.
 | **Display-capability spoof** *(2160p unlock)* | `DeviceParameters` · `doesDisplaySupport` | Returns `true` so the core believes the panel accepts F1's HLG and serves the **2160p tiles** instead of rejecting HLG upstream and dropping to 1620p SDR. Default on; disable with `F1TV_DISPLAY_HDR_SPOOF=0`. |
 | **HDR advertise** *(2160p unlock)* | `EGLRenderTarget` · `getIsBt2020HlgExtensionSupported` | Returns `true`, so `DeviceParameters` reports PQ+HLG EGL support and the backend offers the HDR 2160p tier. Default on; disable with `F1TV_HLG_BYPASS=0`. |
 | Quality selector | `DiagnosticsPreferenceManagerImpl` · `isVideoQualityEnabled` | Returns `true` so the in-app quality picker is visible. (The debug overlays are intentionally left off.) |
-| Display size target | `TrueTVDisplaySizeHelper` · `getDefaultDisplaySize` | Reports the selected profile target via `getTrueDisplaySizeIfTV`, lifting or tuning ClearVR's ~1.5× display-size cap. Shield/smooth target `3840×2160`; safe target `2880×1620`. |
+| Display size target | `TrueTVDisplaySizeHelper` · `getDefaultDisplaySize` | Reports the selected profile target via `getTrueDisplaySizeIfTV`, lifting or tuning ClearVR's ~1.5× display-size cap. Shield/smooth report `3840×2160`; safe reports `1920×1080`, which caps the effective stream target around `2880×1620`. |
 | PQ colour reroute *(correct colours)* | `RenderTargetConfig` · `requireHLG`, `require2020PQ` | Routes F1's HLG content through the EGL **PQ** colorspace the device supports (`requireHLG→false`, `require2020PQ→PQ‖HLG`) so the 4K tiles are correctly gamut-converted instead of shown washed-out. Default on; disable with `F1TV_PQ_REROUTE=0`. |
 | Render path | `RenderAPIConfig` · `getNRPTextureBlitMode` | **Default: EGL/GL path** (patch skipped) so ClearVR composites and does a correct BT.2020→Rec.709 conversion. Set `F1TV_DIRECT_TO_VIEW=1` to force `NATIVE_ANDROID_DIRECT_TO_VIEW` (decoder→SurfaceView) on weak/Amlogic GPUs that drop frames — at the cost of washed-out HDR colours. |
 | Decoder capability spoof | `DecoderCapability` · `getAsCoreProtobuf` | Reports profile-selected secure tile slots/rows/cols. Shield/smooth use `16/5/5`; safe uses `8/4/4`. |
@@ -259,17 +259,17 @@ actually unlock 2160p are **HDR advertise** and **display-capability spoof**.
 |---|---|---|---|---|---|
 | `shield-quality` | `f1tv-uhd-patched.apkm` | EGL/GL + PQ reroute | `3840×2160` | `16/5/5` | NVIDIA Shield or stronger GPUs where colour correctness matters most. |
 | `android-tv-smooth` | `f1tv-uhd-smooth-tv-patched.apkm` | Direct-to-view | `3840×2160` | `16/5/5` | TVs that can decode full 4K but drop frames on the EGL/GL path. |
-| `android-tv-safe` | `f1tv-uhd-android-tv-safe-patched.apkm` | Direct-to-view | `2880×1620` | `8/4/4` | TVs that show 2160p but barely advance frames or run out of decoder resources. |
+| `android-tv-safe` | `f1tv-uhd-android-tv-safe-patched.apkm` | Direct-to-view | reports `1920×1080` for an effective cap around `2880×1620` | `8/4/4` | TVs that show 2160p but barely advance frames or run out of decoder resources. |
 
 Recommended order for generic Android TV: try `android-tv-smooth` first, then `android-tv-safe` if playback still stalls.
 
 ## Build options
 
-`patch.sh` reads these environment variables. `F1TV_SMOOTH_TV=1` is kept as a backward-compatible alias for `F1TV_PATCH_PROFILE=android-tv-smooth`.
+`patch.sh` reads these environment variables. `F1TV_SMOOTH_TV=1` is kept as a backward-compatible local alias for `F1TV_PATCH_PROFILE=android-tv-smooth`; the GitHub workflow uses `patch_profile`.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `F1TV_PATCH_PROFILE` | `shield-quality` | Selects `shield-quality`, `android-tv-smooth`, or `android-tv-safe`. CI defaults to `android-tv-smooth` for this repo. |
+| `F1TV_PATCH_PROFILE` | `shield-quality` | Selects `shield-quality`, `android-tv-smooth`, or `android-tv-safe`. The workflow also offers `both-android-tv`, which builds smooth and safe releases from the same source APKM. |
 | `F1TV_HLG_BYPASS` | `1` | Advertise EGL HDR (PQ+HLG) so the backend offers the 2160p tier. Required for 4K. |
 | `F1TV_DISPLAY_HDR_SPOOF` | `1` | Force the display-capability check to accept all HDR types so the core serves 2160p on HDR10-only panels. Required for 4K on the Shield. |
 | `F1TV_DIRECT_TO_VIEW` | profile-based | Forces decoder-to-SurfaceView rendering when `1`. Android TV profiles default to `1`. |
