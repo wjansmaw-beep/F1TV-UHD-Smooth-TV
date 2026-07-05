@@ -52,11 +52,11 @@ jobs:
       version_short: ${{ steps.version.outputs.version_short }}
       should_build: ${{ steps.decide.outputs.should_build }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
 
       - name: Restore apkeep cache
         id: apkeep-cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v4
         with:
           path: /usr/local/bin/apkeep
           key: apkeep-v2-${{ env.APKEEP_VERSION }}
@@ -170,7 +170,7 @@ jobs:
 
       - name: Save apkeep cache
         if: always() && steps.apkeep-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v4
         with:
           path: /usr/local/bin/apkeep
           key: apkeep-v2-${{ env.APKEEP_VERSION }}
@@ -180,10 +180,12 @@ jobs:
     needs: check
     if: needs.check.outputs.should_build == 'true'
     runs-on: ubuntu-latest
+    env:
+      KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
@@ -197,7 +199,7 @@ jobs:
 
       - name: Restore Playwright cache
         id: pw-cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
           key: playwright-${{ steps.pw.outputs.version }}
@@ -212,7 +214,7 @@ jobs:
 
       - name: Restore apktool cache
         id: apktool-cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v4
         with:
           path: /usr/local/bin/apktool*
           key: apktool-${{ env.APKTOOL_VERSION }}
@@ -241,7 +243,7 @@ jobs:
       - name: Restore custom apkeep cache
         if: ${{ !inputs.apkm_url }}
         id: apkeep-custom-cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v4
         with:
           path: /usr/local/bin/apkeep
           key: apkeep-custom-${{ env.APKEEP_CUSTOM_TAG }}
@@ -254,7 +256,7 @@ jobs:
 
       # ── Option A: Download from Google Play (configured Android TV profile) ──
       - name: Download from Google Play
-        if: ${{ !inputs.apkm_url && env.GOOGLE_EMAIL != '' }}
+        if: ${{ !inputs.apkm_url && env.GOOGLE_EMAIL != '' && env.GOOGLE_AAS_TOKEN != '' }}
         id: download_gplay
         run: |
           mkdir -p download
@@ -303,7 +305,7 @@ jobs:
 
       # ── Download armeabi-v7a split (for 32-bit device compatibility) ──
       - name: Download armeabi-v7a split
-        if: ${{ steps.download_gplay.outcome == 'success' && env.GOOGLE_EMAIL != '' }}
+        if: ${{ steps.download_gplay.outcome == 'success' && env.GOOGLE_EMAIL != '' && env.GOOGLE_AAS_TOKEN != '' }}
         id: download_armv7
         run: |
           echo "Downloading armeabi-v7a split from Google Play (32-bit profile)..."
@@ -408,7 +410,7 @@ jobs:
 
       - name: Upload download debug screenshots
         if: ${{ !inputs.apkm_url && steps.download_gplay.outcome != 'success' && steps.download_apkpure.outcome != 'success' && steps.download_auto.outcome != 'success' }}
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v4
         with:
           name: download-debug-screenshots
           path: download/debug_*
@@ -421,7 +423,12 @@ jobs:
         id: download_url
         run: |
           mkdir -p download
-          curl -sSL -o download/f1tv.apkm "${{ inputs.apkm_url }}"
+          curl -fL --retry 3 --retry-delay 5 -o download/f1tv.apkm "${{ inputs.apkm_url }}"
+          if [[ ! -s download/f1tv.apkm ]]; then
+            echo "::error::Direct APKM URL downloaded an empty file"
+            exit 1
+          fi
+          unzip -t download/f1tv.apkm >/dev/null
           echo "apkm_path=download/f1tv.apkm" >> "$GITHUB_OUTPUT"
 
       - name: Resolve APKM path
@@ -444,14 +451,20 @@ jobs:
             exit 1
           fi
 
+          APKM_PATH="$(grep '^path=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-)"
+          if [[ ! -s "${APKM_PATH}" ]]; then
+            echo "::error::Resolved APKM path is missing or empty: ${APKM_PATH}"
+            exit 1
+          fi
+          unzip -t "${APKM_PATH}" >/dev/null
+          echo "Resolved APKM: ${APKM_PATH}"
+
       # ── Decode persistent keystore from secret (optional) ──
       - name: Set up keystore
         if: ${{ env.KEYSTORE_B64 != '' }}
         run: |
           echo "${KEYSTORE_B64}" | base64 -d > /tmp/patch.keystore
           echo "KEYSTORE_PATH=/tmp/patch.keystore" >> "$GITHUB_ENV"
-        env:
-          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
 
       # ── Patch ──
       - name: Patch APKM
@@ -494,7 +507,7 @@ jobs:
 
       # ── Upload artifacts (always, even if release creation fails) ──
       - name: Upload patched APKs
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v4
         with:
           name: f1tv-patched-${{ needs.check.outputs.version_short }}
           path: output/
@@ -634,21 +647,21 @@ jobs:
       # ── Save caches (runs even if job fails) ──
       - name: Save Playwright cache
         if: always() && steps.pw-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v4
         with:
           path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
           key: playwright-${{ steps.pw.outputs.version }}
 
       - name: Save apktool cache
         if: always() && steps.apktool-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v4
         with:
           path: /usr/local/bin/apktool*
           key: apktool-${{ env.APKTOOL_VERSION }}
 
       - name: Save custom apkeep cache
-        if: always() && steps.apkeep-custom-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
+        if: always() && !inputs.apkm_url && steps.apkeep-custom-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
         with:
           path: /usr/local/bin/apkeep
           key: apkeep-custom-${{ env.APKEEP_CUSTOM_TAG }}
