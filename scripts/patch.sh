@@ -54,9 +54,9 @@ OUTPUT_DIR="$(realpath "$2")"
 [[ -f "${APKM_PATH}" ]] || die "File not found: ${APKM_PATH}"
 mkdir -p "${OUTPUT_DIR}"
 
-PATCH_PROFILE="${F1TV_PATCH_PROFILE:-shield-quality}"
+PATCH_PROFILE="${F1TV_PATCH_PROFILE:-android-tv-4k}"
 if [[ "${F1TV_SMOOTH_TV:-0}" == "1" ]]; then
-    PATCH_PROFILE="android-tv-smooth"
+    PATCH_PROFILE="android-tv-4k"
 fi
 
 case "${PATCH_PROFILE}" in
@@ -77,8 +77,8 @@ case "${PATCH_PROFILE}" in
         OUTPUT_BASENAME="${F1TV_OUTPUT_BASENAME:-f1tv-uhd-patched.apkm}"
         info "Patch profile: shield-quality (EGL/GL render path, full 2160p target)"
         ;;
-    smooth-tv|android-tv-smooth)
-        PATCH_PROFILE="android-tv-smooth"
+    android-tv|android-tv-4k|smooth-tv|android-tv-smooth)
+        PATCH_PROFILE="android-tv-4k"
         F1TV_DIRECT_TO_VIEW="${F1TV_DIRECT_TO_VIEW:-1}"
         F1TV_HLG_BYPASS="${F1TV_HLG_BYPASS:-1}"
         F1TV_DISPLAY_HDR_SPOOF="${F1TV_DISPLAY_HDR_SPOOF:-1}"
@@ -90,9 +90,9 @@ case "${PATCH_PROFILE}" in
         F1TV_DECODER_TILE_COLUMNS="${F1TV_DECODER_TILE_COLUMNS:-5}"
         F1TV_DISPLAY_WIDTH="${F1TV_DISPLAY_WIDTH:-3840}"
         F1TV_DISPLAY_HEIGHT="${F1TV_DISPLAY_HEIGHT:-2160}"
-        VERSION_SUFFIX="${F1TV_VERSION_SUFFIX:--UHD-SMOOTH}"
-        OUTPUT_BASENAME="${F1TV_OUTPUT_BASENAME:-f1tv-uhd-smooth-tv-patched.apkm}"
-        info "Patch profile: android-tv-smooth (direct-to-view, full 2160p target)"
+        VERSION_SUFFIX="${F1TV_VERSION_SUFFIX:--ANDROID-TV-4K}"
+        OUTPUT_BASENAME="${F1TV_OUTPUT_BASENAME:-f1tv-android-tv-4k-patched.apkm}"
+        info "Patch profile: android-tv-4k (Android TV direct-to-view, full 2160p target)"
         ;;
     android-tv-safe)
         F1TV_DIRECT_TO_VIEW="${F1TV_DIRECT_TO_VIEW:-1}"
@@ -551,8 +551,12 @@ with open(path, 'w') as f:
 print(f"  Patched {path}")
 PYEOF
 
-    [[ $? -eq 0 ]] && ok "NRP direct-to-view patch applied (all devices)" || warn "NRP direct-to-view patch failed"
+    [[ $? -eq 0 ]] || die "NRP direct-to-view patch failed"
+    ok "NRP direct-to-view patch applied (all devices)"
 else
+    if [[ "${F1TV_DIRECT_TO_VIEW:-0}" != "0" ]]; then
+        die "RenderAPIConfig.smali not found; direct-to-view is required for ${PATCH_PROFILE}"
+    fi
     warn "RenderAPIConfig.smali not found, skipping direct-to-view patch"
 fi
 
@@ -747,7 +751,7 @@ PYEOF
         warn "RenderTargetConfig.smali not found, skipping PQ reroute"
     fi
 else
-    info "Skipping PQ reroute (direct-to-view/smooth profile does not use the EGL colour-conversion path)"
+    info "Skipping PQ reroute (direct-to-view Android TV profile does not use the EGL colour-conversion path)"
 fi
 
 # ─── Spoof display HDR capability (default ON — the 2160p unlock) ───────────

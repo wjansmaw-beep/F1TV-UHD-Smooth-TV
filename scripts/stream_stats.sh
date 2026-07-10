@@ -48,10 +48,10 @@ else
         | head -1 || echo "")"
 fi
 HDR_LIST=""
+[[ "${HDR_TYPES}" == *1* ]] && HDR_LIST="${HDR_LIST}DolbyVision "
 [[ "${HDR_TYPES}" == *2* ]] && HDR_LIST="${HDR_LIST}HDR10 "
-[[ "${HDR_TYPES}" == *3* ]] && HDR_LIST="${HDR_LIST}HDR10+ "
-[[ "${HDR_TYPES}" == *4* ]] && HDR_LIST="${HDR_LIST}DolbyVision "
-[[ "${HDR_TYPES}" == *1* ]] && HDR_LIST="${HDR_LIST}HLG "
+[[ "${HDR_TYPES}" == *3* ]] && HDR_LIST="${HDR_LIST}HLG "
+[[ "${HDR_TYPES}" == *4* ]] && HDR_LIST="${HDR_LIST}HDR10+ "
 [[ -z "${HDR_LIST}" ]] && HDR_LIST="none"
 
 clear

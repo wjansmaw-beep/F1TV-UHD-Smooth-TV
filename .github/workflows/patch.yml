@@ -19,10 +19,10 @@ on:
         description: "Patch profile to build"
         required: false
         type: choice
-        default: android-tv-smooth
+        default: android-tv-4k
         options:
+          - android-tv-4k
           - shield-quality
-          - android-tv-smooth
           - android-tv-safe
           - both-android-tv
       download_profile:
@@ -98,9 +98,9 @@ jobs:
         id: existing
         if: steps.version.outputs.version_short != ''
         run: |
-          PROFILE="${{ inputs.patch_profile || 'android-tv-smooth' }}"
+          PROFILE="${{ inputs.patch_profile || 'android-tv-4k' }}"
           if [[ "${PROFILE}" == "both-android-tv" ]]; then
-            PROFILES=("android-tv-smooth" "android-tv-safe")
+            PROFILES=("android-tv-4k" "android-tv-safe")
           else
             PROFILES=("${PROFILE}")
           fi
@@ -108,8 +108,8 @@ jobs:
           all_exist=true
           for profile in "${PROFILES[@]}"; do
             TAG="v${{ steps.version.outputs.version_short }}"
-            if [[ "${profile}" == "android-tv-smooth" ]]; then
-              TAG="${TAG}-smooth-tv"
+            if [[ "${profile}" == "android-tv-4k" ]]; then
+              TAG="${TAG}-android-tv-4k"
             elif [[ "${profile}" == "android-tv-safe" ]]; then
               TAG="${TAG}-android-tv-safe"
             fi
@@ -470,9 +470,9 @@ jobs:
       - name: Patch APKM
         run: |
           chmod +x scripts/patch.sh
-          PROFILE="${{ inputs.patch_profile || 'android-tv-smooth' }}"
+          PROFILE="${{ inputs.patch_profile || 'android-tv-4k' }}"
           if [[ "${PROFILE}" == "both-android-tv" ]]; then
-            PROFILES=("android-tv-smooth" "android-tv-safe")
+            PROFILES=("android-tv-4k" "android-tv-safe")
           else
             PROFILES=("${PROFILE}")
           fi
@@ -497,7 +497,7 @@ jobs:
           # Unlock the 2160p tier. The normal build keeps the EGL/GL path for
           # colour correctness; Android TV profiles use decoder-to-SurfaceView for
           # TVs that show 2160p but advance frames very slowly.
-          #   shield-quality/android-tv-smooth -> profile defaults unlock HDR 2160p
+          #   shield-quality/android-tv-4k -> profile defaults unlock HDR 2160p
           #   android-tv-safe -> profile defaults keep HDR spoofing off for SDR TVs
           KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS || 'android' }}
           KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS || 'f1tvpatch' }}
@@ -514,9 +514,9 @@ jobs:
       - name: Create release
         id: release
         run: |
-          PROFILE_INPUT="${{ inputs.patch_profile || 'android-tv-smooth' }}"
+          PROFILE_INPUT="${{ inputs.patch_profile || 'android-tv-4k' }}"
           if [[ "${PROFILE_INPUT}" == "both-android-tv" ]]; then
-            PROFILES=("android-tv-smooth" "android-tv-safe")
+            PROFILES=("android-tv-4k" "android-tv-safe")
           else
             PROFILES=("${PROFILE_INPUT}")
           fi
@@ -544,12 +544,12 @@ jobs:
             PROFILE_NOTE="Profile: Shield Quality (EGL/GL render path, better colours)"
             PRERELEASE_FLAG=""
 
-            if [[ "${profile}" == "android-tv-smooth" ]]; then
-              TAG="${TAG}-smooth-tv"
-              TITLE="F1TV UHD Smooth TV Patched - ${{ needs.check.outputs.version }}"
-              ASSET="output/f1tv-uhd-smooth-tv-patched.apkm"
-              INSTALL_NAME="f1tv-uhd-smooth-tv-patched.apkm"
-              PROFILE_NOTE="Profile: Android TV Smooth (direct-to-view render path, full 2160p target)"
+            if [[ "${profile}" == "android-tv-4k" ]]; then
+              TAG="${TAG}-android-tv-4k"
+              TITLE="F1TV Android TV 4K Patched - ${{ needs.check.outputs.version }}"
+              ASSET="output/f1tv-android-tv-4k-patched.apkm"
+              INSTALL_NAME="f1tv-android-tv-4k-patched.apkm"
+              PROFILE_NOTE="Profile: Android TV 4K (direct-to-view render path, full 2160p target)"
             elif [[ "${profile}" == "android-tv-safe" ]]; then
               TAG="${TAG}-android-tv-safe"
               TITLE="F1TV UHD Android TV Safe Patched - ${{ needs.check.outputs.version }}"
